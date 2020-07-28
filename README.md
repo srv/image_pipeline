@@ -8,3 +8,16 @@ This package fills the gap between getting raw images from a camera driver and h
 For more information on this metapackage and underlying packages, please see [the ROS wiki entry](http://wiki.ros.org/image_pipeline).
 
 For examples, see the [image_pipeline tutorials entry](http://wiki.ros.org/image_pipeline/Tutorials) on the ROS Wiki.
+
+CALIBRATION
+===========
+
+open gui call example: 
+
+rosrun camera_calibration cameracalibrator.py --approximate 0.1 --size 8x6 --square 0.4 right:=/stereo_down/right/image_raw left:=/stereo_down/left/image_raw right_camera:=/stereo_down/right left_camera:=/stereo_down/left
+
+
+load config from yaml file:
+
+- exec cameracalibrator.py
+- click on upload button -> it will load left/right yaml from the path indecated in /image_pipeline/camera_calibration/src/camera_calibration/camera_calibrator.py at function "def do_upload(self)"
