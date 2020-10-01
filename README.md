@@ -14,7 +14,7 @@ CALIBRATION
 
 open gui call example: 
 
-rosrun camera_calibration cameracalibrator.py --approximate 0.1 --size 8x6 --square 0.4 right:=/stereo_down/right/image_raw left:=/stereo_down/left/image_raw right_camera:=/stereo_down/right left_camera:=/stereo_down/left
+rosrun camera_calibration cameracalibrator.py --approximate 0.1 --size 8x6 --square 0.04 right:=/stereo_down/right/image_raw left:=/stereo_down/left/image_raw right_camera:=/stereo_down/right left_camera:=/stereo_down/left
 
 
 load config from yaml file:

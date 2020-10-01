@@ -203,8 +203,7 @@ class CalibrationNode:
                                           checkerboard_flags=self._checkerboard_flags,
                                           max_chessboard_speed = self._max_chessboard_speed)
 
-        #print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        #print(self.c)
+
         drawable = self.c.handle_msg(msg)
         self.displaywidth = drawable.lscrib.shape[1] + drawable.rscrib.shape[1]
         self.redraw_stereo(drawable)
@@ -243,8 +242,8 @@ class CalibrationNode:
 
     def do_upload(self):
 
-        left_file_name  = '/home/miguel/Desktop/left.yaml'
-        right_file_name = '/home/miguel/Desktop/right.yaml'
+        left_file_name  = '/home/miguel/Desktop/camera_calibrations/test/left.yaml'
+        right_file_name = '/home/miguel/Desktop/camera_calibrations/test/right.yaml'
         left_cam_info = yaml_to_CameraInfo(left_file_name)
         right_cam_info = yaml_to_CameraInfo(right_file_name)
 
