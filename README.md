@@ -23,3 +23,5 @@ load config from yaml file:
 
 - open gui
 - click on upload button -> it will load left/right yaml from the path indecated in /image_pipeline/camera_calibration/src/camera_calibration/camera_calibrator.py at function "def do_upload(self)"
+
+- TODO: left/right.yaml are generated with camera_model instead of distortion_model
