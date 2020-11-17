@@ -241,9 +241,11 @@ class CalibrationNode:
         return rv
 
     def do_upload(self):
-
-        left_file_name  = '/home/miguel/Desktop/camera_calibrations/test/left.yaml'
-        right_file_name = '/home/miguel/Desktop/camera_calibrations/test/right.yaml'
+	
+	configs_path = ""
+	config_name = ""
+        left_file_name  = os.path.join(configs_path,config_name, 'left.yaml')
+        right_file_name = os.path.join(configs_path,config_name, 'right.yaml')
         left_cam_info = yaml_to_CameraInfo(left_file_name)
         right_cam_info = yaml_to_CameraInfo(right_file_name)
 
