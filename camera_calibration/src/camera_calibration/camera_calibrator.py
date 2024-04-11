@@ -246,8 +246,8 @@ class CalibrationNode:
         # config_name = ""
         # left_file_name  = os.path.join(configs_path,config_name, 'left.yaml')
         # right_file_name = os.path.join(configs_path,config_name, 'right.yaml')
-        left_file_name = '/home/uib178907/Escritorio/calibrations/11_10_2023_sea/left.yaml'
-        right_file_name = '/home/uib178907/Escritorio/calibrations/11_10_2023_sea/right.yaml'
+        left_file_name = '/home/user/camera_calibration/left.yaml'
+        right_file_name = '/home/user/camera_calibration/right.yaml'
         left_cam_info = yaml_to_CameraInfo(left_file_name)
         right_cam_info = yaml_to_CameraInfo(right_file_name)
 
