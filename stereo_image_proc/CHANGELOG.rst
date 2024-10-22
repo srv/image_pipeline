@@ -1,3 +1,13 @@
+1.15.2 (2022-07-13)
+-------------------
+* support rgba8 and bgra8 encodings by skipping alpha channel
+* build error fix
+* feedback considered
+* downsampling original img / upsampling disparity img
+
+1.15.1 (2020-12-11)
+-------------------
+
 1.15.0 (2020-05-18)
 -------------------
 * updated install locations for better portability. (`#500 <https://github.com/ros-perception/image_pipeline/issues/500>`_)

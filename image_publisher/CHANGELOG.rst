@@ -1,6 +1,10 @@
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Changelog for package image_publisher
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1.15.2 (2022-07-13)
+-------------------
+
+1.15.1 (2020-12-11)
+-------------------
+* adapt to OpenCV4 (`#537 <https://github.com/ros-perception/image_pipeline/issues/537>`_)
+* Contributors: Joshua Whitley, Sean Yen, Timon Engelke
 
 1.15.0 (2020-05-18)
 -------------------
