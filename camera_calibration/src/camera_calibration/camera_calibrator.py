@@ -37,6 +37,8 @@ import message_filters
 import numpy
 import os
 import rospy
+import yaml
+from sensor_msgs.msg import CameraInfo
 import sensor_msgs.msg
 import sensor_msgs.srv
 import threading
@@ -220,7 +222,7 @@ class CalibrationNode:
         rospy.logerr('Unable to set camera info for calibration. Failure message: %s' % response.status_message)
         return False
 
-    def do_upload(self):
+    def do_commit(self):
         self.c.report()
         print(self.c.ost())
         info = self.c.as_message()
@@ -235,6 +237,26 @@ class CalibrationNode:
             response = self.set_right_camera_info_service(info[1])
             rv = rv and self.check_set_camera_info(response)
         return rv
+
+    def do_upload(self):
+
+        # configs_path = ""
+        # config_name = ""
+        # left_file_name  = os.path.join(configs_path,config_name, 'left.yaml')
+        # right_file_name = os.path.join(configs_path,config_name, 'right.yaml')
+        left_file_name = '/home/sparus/camera_calibrations/calibration_sea_2024_10_21/calibration_0/left.yaml'
+        right_file_name = '/home/sparus/camera_calibrations/calibration_sea_2024_10_21/calibration_0/right.yaml'
+        left_cam_info = yaml_to_CameraInfo(left_file_name)
+        right_cam_info = yaml_to_CameraInfo(right_file_name)
+
+        rv = True
+
+        response = self.set_left_camera_info_service(left_cam_info)
+        rv = rv and self.check_set_camera_info(response)
+        response = self.set_right_camera_info_service(right_cam_info)
+        rv = rv and self.check_set_camera_info(response)
+        return rv
+
 
 
 class OpenCVCalibrationNode(CalibrationNode):
@@ -263,18 +285,22 @@ class OpenCVCalibrationNode(CalibrationNode):
     def on_mouse(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN and self.displaywidth < x:
             if self.c.goodenough:
-                if 180 <= y < 280:
+                if 180 <= y < 255:
                     print("**** Calibrating ****")
                     self.c.do_calibration()
                     self.buttons(self._last_display)
                     self.queue_display.put(self._last_display)
             if self.c.calibrated:
-                if 280 <= y < 380:
+                if 255 <= y < 330:
                     self.c.do_save()
-                elif 380 <= y < 480:
+                elif 330 <= y < 405:
                     # Only shut down if we set camera info correctly, #3993
-                    if self.do_upload():
+                    if self.do_commit():
                         rospy.signal_shutdown('Quit')
+            if 405 <= y < 480:
+                # Only shut down if we set camera info correctly, #3993
+                if self.do_upload():
+                    rospy.signal_shutdown('Quit')
     def on_model_change(self, model_select_val):
         if self.c == None:
             print("Cannot change camera model until the first image has been received")
@@ -299,10 +325,10 @@ class OpenCVCalibrationNode(CalibrationNode):
 
     def buttons(self, display):
         x = self.displaywidth
-        self.button(display[180:280,x:x+100], "CALIBRATE", self.c.goodenough)
-        self.button(display[280:380,x:x+100], "SAVE", self.c.calibrated)
-        self.button(display[380:480,x:x+100], "COMMIT", self.c.calibrated)
-
+        self.button(display[180:255,x:x+100], "CALIBRATE", self.c.goodenough)
+        self.button(display[255:330,x:x+100], "SAVE", self.c.calibrated)
+        self.button(display[330:405,x:x+100], "COMMIT", self.c.calibrated)
+        self.button(display[405:480,x:x+100], "UPLOAD", self.c.calibrated)
     def y(self, i):
         """Set up right-size images"""
         return 30 + 40 * i
@@ -387,3 +413,35 @@ class OpenCVCalibrationNode(CalibrationNode):
 
         self._last_display = display
         self.queue_display.put(display)
+
+
+def yaml_to_CameraInfo(yaml_fname):
+
+    """
+    Parse a yaml file containing camera calibration data (as produced by rosrun camera_calibration cameracalibrator.py) into a 
+    sensor_msgs/CameraInfo msg.
+    
+    Parameters
+    ----------
+    yaml_fname : str
+        Path to yaml file containing camera calibration data
+    Returns
+    -------
+    camera_info_msg : sensor_msgs.msg.CameraInfo
+        A sensor_msgs.msg.CameraInfo message containing the camera calibration data
+    """
+
+    # Load data from file
+    with open(yaml_fname, "r") as file_handle:
+        calib_data = yaml.safe_load(file_handle)
+    # Parse
+    camera_info_msg = CameraInfo()
+    camera_info_msg.width = calib_data["image_width"]
+    camera_info_msg.height = calib_data["image_height"]
+    camera_info_msg.K = calib_data["camera_matrix"]["data"]
+    camera_info_msg.D = calib_data["distortion_coefficients"]["data"]
+    camera_info_msg.R = calib_data["rectification_matrix"]["data"]
+    camera_info_msg.P = calib_data["projection_matrix"]["data"]
+    camera_info_msg.distortion_model = calib_data["distortion_model"]
+
+    return camera_info_msg
