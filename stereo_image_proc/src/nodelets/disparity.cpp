@@ -85,7 +85,8 @@ class DisparityNodelet : public nodelet::Nodelet
   typedef stereo_image_proc::DisparityConfig Config;
   typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
   boost::shared_ptr<ReconfigureServer> reconfigure_server_;
-  
+  int downsampling_factor_;
+
   // Processing state (note: only safe because we're single-threaded!)
   image_geometry::StereoCameraModel model_;
   stereo_image_proc::StereoProcessor block_matcher_; // contains scratch buffers for block matching
@@ -113,13 +114,14 @@ void DisparityNodelet::onInit()
   private_nh.param("queue_size", queue_size, 5);
   bool approx;
   private_nh.param("approximate_sync", approx, false);
+  private_nh.param("downsampling_factor", downsampling_factor_, 1);
   if (approx)
   {
     approximate_sync_.reset( new ApproximateSync(ApproximatePolicy(queue_size),
                                                  sub_l_image_, sub_l_info_,
                                                  sub_r_image_, sub_r_info_) );
     approximate_sync_->registerCallback(boost::bind(&DisparityNodelet::imageCb,
-                                                    this, _1, _2, _3, _4));
+                                                    this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4));
   }
   else
   {
@@ -127,12 +129,12 @@ void DisparityNodelet::onInit()
                                      sub_l_image_, sub_l_info_,
                                      sub_r_image_, sub_r_info_) );
     exact_sync_->registerCallback(boost::bind(&DisparityNodelet::imageCb,
-                                              this, _1, _2, _3, _4));
+                                              this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4));
   }
 
   // Set up dynamic reconfiguration
   ReconfigureServer::CallbackType f = boost::bind(&DisparityNodelet::configCb,
-                                                  this, _1, _2);
+                                                  this, boost::placeholders::_1, boost::placeholders::_2);
   reconfigure_server_.reset(new ReconfigureServer(config_mutex_, private_nh));
   reconfigure_server_->setCallback(f);
 
@@ -167,6 +169,59 @@ void DisparityNodelet::connectCb()
   }
 }
 
+cv::Mat subsampleTheImage(
+    const cv::Mat& input_image,
+    const uint32_t downsample_factor_per_dimension) {
+  cv::Mat blurred_image;
+  const int32_t kernel_size = 2 * downsample_factor_per_dimension + 1;
+  cv::GaussianBlur(
+      input_image, blurred_image, cv::Size(kernel_size, kernel_size),
+      downsample_factor_per_dimension);
+
+  // To avoid computational effort of bilinear interpolation, perform
+  // interpolation manually.
+  uint32_t downsampled_height = std::ceil(
+      input_image.size().height /
+      static_cast<double>(downsample_factor_per_dimension));
+  uint32_t downsampled_width = std::ceil(
+      input_image.size().width /
+      static_cast<double>(downsample_factor_per_dimension));
+  cv::Mat downsampled_image(
+      downsampled_height, downsampled_width, input_image.type());
+
+  for (uint32_t destination_row = 0u;
+       destination_row < downsampled_image.size().height; destination_row++) {
+    for (uint32_t destination_col = 0u;
+         destination_col < downsampled_image.size().width; destination_col++) {
+      downsampled_image.at<uint8_t>(destination_row, destination_col) =
+          blurred_image.at<uint8_t>(
+              destination_row * downsample_factor_per_dimension,
+              destination_col * downsample_factor_per_dimension);
+    }
+  }
+  return downsampled_image;
+}
+
+cv::Mat upsampleTheDisparityImageWithoutInterpolation(
+    const cv::Mat& disparity, const cv::Size& destination_size,
+    const uint32_t upsample_factor_per_dimension) {
+  cv::Mat upsampled_disparity(destination_size, disparity.type(), -1.);
+
+  for (uint32_t destination_row = 0u;
+       destination_row < upsampled_disparity.size().height; destination_row++) {
+    for (uint32_t destination_col = 0u;
+         destination_col < upsampled_disparity.size().width;
+         destination_col++) {
+      upsampled_disparity.at<float>(destination_row, destination_col) =
+          upsample_factor_per_dimension *
+          disparity.at<float>(
+              destination_row / upsample_factor_per_dimension,
+              destination_col / upsample_factor_per_dimension);
+    }
+  }
+  return upsampled_disparity;
+}
+
 void DisparityNodelet::imageCb(const ImageConstPtr& l_image_msg,
                                const CameraInfoConstPtr& l_info_msg,
                                const ImageConstPtr& r_image_msg,
@@ -176,9 +231,11 @@ void DisparityNodelet::imageCb(const ImageConstPtr& l_image_msg,
   model_.fromCameraInfo(l_info_msg, r_info_msg);
 
   // Allocate new disparity image message
-  DisparityImagePtr disp_msg = boost::make_shared<DisparityImage>();
-  disp_msg->header         = l_info_msg->header;
-  disp_msg->image.header   = l_info_msg->header;
+  DisparityImagePtr disp_msg      = boost::make_shared<DisparityImage>();
+  disp_msg->header                = l_info_msg->header;
+  disp_msg->header.frame_id       = l_image_msg->header.frame_id;
+  disp_msg->image.header          = l_info_msg->header;
+  disp_msg->image.header.frame_id = l_image_msg->header.frame_id;
 
   // Compute window of (potentially) valid disparities
   int border   = block_matcher_.getCorrelationWindowSize() / 2;
@@ -196,8 +253,34 @@ void DisparityNodelet::imageCb(const ImageConstPtr& l_image_msg,
   const cv::Mat_<uint8_t> l_image = cv_bridge::toCvShare(l_image_msg, sensor_msgs::image_encodings::MONO8)->image;
   const cv::Mat_<uint8_t> r_image = cv_bridge::toCvShare(r_image_msg, sensor_msgs::image_encodings::MONO8)->image;
 
+  cv::Mat_<uint8_t> l_sub_image;
+  cv::Mat_<uint8_t> r_sub_image;
+
+  if (downsampling_factor_ != 1) {
+    l_sub_image = subsampleTheImage(l_image, downsampling_factor_);
+    r_sub_image = subsampleTheImage(r_image, downsampling_factor_);
+  } else {
+    l_sub_image = l_image;
+    r_sub_image = r_image;
+  }
+
   // Perform block matching to find the disparities
-  block_matcher_.processDisparity(l_image, r_image, model_, *disp_msg);
+  block_matcher_.processDisparity(l_sub_image, r_sub_image, model_, *disp_msg);
+
+  // Upsampling
+  if (downsampling_factor_ != 1) {
+    const cv::Mat disp_subsampled_image =
+        cv_bridge::toCvShare(
+            disp_msg->image, disp_msg, sensor_msgs::image_encodings::TYPE_32FC1)
+            ->image;
+    const cv::Mat disp_upsampled_image =
+        upsampleTheDisparityImageWithoutInterpolation(
+            disp_subsampled_image, l_image.size(), downsampling_factor_);
+    const cv_bridge::CvImage disp_image_container = cv_bridge::CvImage(
+        disp_msg->header, sensor_msgs::image_encodings::TYPE_32FC1,
+        disp_upsampled_image);
+    disp_image_container.toImageMsg(disp_msg->image);
+  }
 
   // Adjust for any x-offset between the principal points: d' = d - (cx_l - cx_r)
   double cx_l = model_.left().cx();
@@ -246,5 +329,5 @@ void DisparityNodelet::configCb(Config &config, uint32_t level)
 } // namespace stereo_image_proc
 
 // Register nodelet
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(stereo_image_proc::DisparityNodelet,nodelet::Nodelet)

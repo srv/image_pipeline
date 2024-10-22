@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 #
 # Software License Agreement (BSD License)
 #
@@ -181,7 +181,7 @@ class CalibrationNode:
                                         max_chessboard_speed = self._max_chessboard_speed)
             else:
                 self.c = MonoCalibrator(self._boards, self._calib_flags, self._fisheye_calib_flags, self._pattern,
-                                        checkerboard_flags=self.checkerboard_flags,
+                                        checkerboard_flags=self._checkerboard_flags,
                                         max_chessboard_speed = self._max_chessboard_speed)
 
         # This should just call the MonoCalibrator
@@ -276,6 +276,10 @@ class OpenCVCalibrationNode(CalibrationNode):
                     if self.do_upload():
                         rospy.signal_shutdown('Quit')
     def on_model_change(self, model_select_val):
+        if self.c == None:
+            print("Cannot change camera model until the first image has been received")
+            return
+
         self.c.set_cammodel( CAMERA_MODEL.PINHOLE if model_select_val < 0.5 else CAMERA_MODEL.FISHEYE)
 
     def on_scale(self, scalevalue):
@@ -335,7 +339,7 @@ class OpenCVCalibrationNode(CalibrationNode):
         else:
             self.putText(display, "lin.", (width, self.y(0)))
             linerror = drawable.linear_error
-            if linerror < 0:
+            if linerror is None or linerror < 0:
                 msg = "?"
             else:
                 msg = "%.2f" % linerror

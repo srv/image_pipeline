@@ -2,6 +2,17 @@
 Changelog for package image_pipeline
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.17.0 (2022-10-17)
+-------------------
+
+1.16.0 (2021-11-12)
+-------------------
+
+1.15.3 (2020-12-11)
+-------------------
+* remove email blasts from steve macenski (`#595 <https://github.com/ros-perception/image_pipeline/issues/595>`_)
+* Contributors: Steve Macenski
+
 1.15.2 (2020-05-19)
 -------------------
 

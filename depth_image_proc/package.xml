@@ -1,6 +1,6 @@
 <package>
   <name>depth_image_proc</name>
-  <version>1.15.2</version>
+  <version>1.17.0</version>
   <description>
 
      Contains nodelets for processing depth images such as those
@@ -11,7 +11,6 @@
   </description>
   <author>Patrick Mihelich</author>
   <maintainer email="vincent.rabaud@gmail.com">Vincent Rabaud</maintainer>
-  <maintainer email="stevenmacenski@gmail.com">Steven Macenski</maintainer>
   <maintainer email="software@autonomoustuff.com">Autonomoustuff team</maintainer>
   <license>BSD</license>
   <url>http://ros.org/wiki/depth_image_proc</url>
@@ -45,4 +44,5 @@
   <run_depend>nodelet</run_depend>
   <run_depend>tf2</run_depend>
   <run_depend>tf2_ros</run_depend>
+  <run_depend>sensor_msgs</run_depend>
 </package>

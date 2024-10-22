@@ -1,3 +1,27 @@
+1.17.0 (2022-10-17)
+-------------------
+* Switch to hpp headers of pluginlib
+* Switch to new boost/bind/bind.hpp
+* Add support for floating point fps
+* Contributors: Jochen Sprickerhof, Júnio Eduardo de Morais Aquino
+
+1.16.0 (2021-11-12)
+-------------------
+* remove GTK3 dep.
+* remove harfbuzz.
+* Update image_view/CMakeLists.txt
+  Co-authored-by: Joshua Whitley <josh.whitley@autoware.org>
+* Update image_view/CMakeLists.txt
+  Co-authored-by: Joshua Whitley <josh.whitley@autoware.org>
+* Make GTK3 and harfbuzz optional
+* Contributors: Sean Yen, seanyen
+
+1.15.3 (2020-12-11)
+-------------------
+* remove email blasts from steve macenski (`#595 <https://github.com/ros-perception/image_pipeline/issues/595>`_)
+* [image_view] Warn when filename_format is invalid (`#587 <https://github.com/ros-perception/image_pipeline/issues/587>`_)
+* Contributors: Naoya Yamaguchi, Steve Macenski
+
 1.15.2 (2020-05-19)
 -------------------
 

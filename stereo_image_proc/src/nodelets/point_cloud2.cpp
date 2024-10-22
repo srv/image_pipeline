@@ -108,7 +108,7 @@ void PointCloud2Nodelet::onInit()
                                                  sub_l_image_, sub_l_info_,
                                                  sub_r_info_, sub_disparity_) );
     approximate_sync_->registerCallback(boost::bind(&PointCloud2Nodelet::imageCb,
-                                                    this, _1, _2, _3, _4));
+                                                    this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4));
   }
   else
   {
@@ -116,7 +116,7 @@ void PointCloud2Nodelet::onInit()
                                      sub_l_image_, sub_l_info_,
                                      sub_r_info_, sub_disparity_) );
     exact_sync_->registerCallback(boost::bind(&PointCloud2Nodelet::imageCb,
-                                              this, _1, _2, _3, _4));
+                                              this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4));
   }
 
   // Monitor whether anyone is subscribed to the output
@@ -240,6 +240,22 @@ void PointCloud2Nodelet::imageCb(const ImageConstPtr& l_image_msg,
       }
     }
   }
+  else if (encoding == enc::RGBA8)
+  {
+    const cv::Mat_<cv::Vec4b> color(l_image_msg->height, l_image_msg->width,
+                                    (cv::Vec4b*)&l_image_msg->data[0],
+                                    l_image_msg->step);
+    for (int v = 0; v < mat.rows; ++v)
+    {
+      for (int u = 0; u < mat.cols; ++u, ++iter_r, ++iter_g, ++iter_b)
+      {
+        const cv::Vec4b& rgba = color(v,u);
+        *iter_r = rgba[0];
+        *iter_g = rgba[1];
+        *iter_b = rgba[2];
+      }
+    }
+  }
   else if (encoding == enc::BGR8)
   {
     const cv::Mat_<cv::Vec3b> color(l_image_msg->height, l_image_msg->width,
@@ -256,6 +272,22 @@ void PointCloud2Nodelet::imageCb(const ImageConstPtr& l_image_msg,
       }
     }
   }
+  else if (encoding == enc::BGRA8)
+  {
+    const cv::Mat_<cv::Vec4b> color(l_image_msg->height, l_image_msg->width,
+                                    (cv::Vec4b*)&l_image_msg->data[0],
+                                    l_image_msg->step);
+    for (int v = 0; v < mat.rows; ++v)
+    {
+      for (int u = 0; u < mat.cols; ++u, ++iter_r, ++iter_g, ++iter_b)
+      {
+        const cv::Vec4b& bgra = color(v,u);
+        *iter_r = bgra[2];
+        *iter_g = bgra[1];
+        *iter_b = bgra[0];
+      }
+    }
+  }
   else
   {
     NODELET_WARN_THROTTLE(30, "Could not fill color channel of the point cloud, "
@@ -268,5 +300,5 @@ void PointCloud2Nodelet::imageCb(const ImageConstPtr& l_image_msg,
 } // namespace stereo_image_proc
 
 // Register nodelet
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(stereo_image_proc::PointCloud2Nodelet,nodelet::Nodelet)

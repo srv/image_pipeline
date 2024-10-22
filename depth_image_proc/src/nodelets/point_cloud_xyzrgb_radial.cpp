@@ -33,12 +33,14 @@
  *********************************************************************/
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
+#include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
 #include <image_transport/subscriber_filter.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <boost/thread.hpp>
@@ -50,15 +52,16 @@ namespace depth_image_proc {
 
     using namespace message_filters::sync_policies;
     namespace enc = sensor_msgs::image_encodings;
-    typedef ExactTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> SyncPolicy;
+    typedef ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> SyncPolicy;
+    typedef ExactTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> ExactSyncPolicy;
 
-    class PointCloudXyziRadialNodelet : public nodelet::Nodelet
+    class PointCloudXyzRgbRadialNodelet : public nodelet::Nodelet
     {
-	ros::NodeHandlePtr intensity_nh_;
+	ros::NodeHandlePtr rgb_nh_;
 
 	// Subscriptions
-	boost::shared_ptr<image_transport::ImageTransport> intensity_it_, depth_it_;
-	image_transport::SubscriberFilter sub_depth_, sub_intensity_;
+	boost::shared_ptr<image_transport::ImageTransport> rgb_it_, depth_it_;
+	image_transport::SubscriberFilter sub_depth_, sub_rgb_;
 	message_filters::Subscriber<sensor_msgs::CameraInfo> sub_info_;
 
 	int queue_size_;
@@ -70,7 +73,9 @@ namespace depth_image_proc {
 
 	
 	typedef message_filters::Synchronizer<SyncPolicy> Synchronizer;
+	typedef message_filters::Synchronizer<ExactSyncPolicy> ExactSynchronizer;
 	boost::shared_ptr<Synchronizer> sync_;
+	boost::shared_ptr<ExactSynchronizer> exact_sync_;
 
 	std::vector<double> D_;
 	boost::array<double, 9> K_;
@@ -79,27 +84,28 @@ namespace depth_image_proc {
 	int height_;
 
 	cv::Mat transform_;
-  
+        image_geometry::PinholeCameraModel model_;
+	
 	virtual void onInit();
 
 	void connectCb();
 
 	void imageCb(const sensor_msgs::ImageConstPtr& depth_msg,
-		     const sensor_msgs::ImageConstPtr& intensity_msg_in,
+		     const sensor_msgs::ImageConstPtr& rgb_msg_in,
 		     const sensor_msgs::CameraInfoConstPtr& info_msg);
 
 	// Handles float or uint16 depths
 	template<typename T>
 	void convert_depth(const sensor_msgs::ImageConstPtr& depth_msg, PointCloud::Ptr& cloud_msg);
 
-	template<typename T>
-	void convert_intensity(const sensor_msgs::ImageConstPtr &inten_msg, PointCloud::Ptr& cloud_msg);
+	void convert_rgb(const sensor_msgs::ImageConstPtr &rgb_msg, PointCloud::Ptr& cloud_msg,
+	  int red_offset, int green_offset, int blue_offset, int color_step);
 
 	cv::Mat initMatrix(cv::Mat cameraMatrix, cv::Mat distCoeffs, int width, int height, bool radial);
 
     };
 
-    cv::Mat PointCloudXyziRadialNodelet::initMatrix(cv::Mat cameraMatrix, cv::Mat distCoeffs, int width, int height, bool radial)
+    cv::Mat PointCloudXyzRgbRadialNodelet::initMatrix(cv::Mat cameraMatrix, cv::Mat distCoeffs, int width, int height, bool radial)
     {
 	int i,j;
 	int totalsize = width*height;
@@ -141,40 +147,49 @@ namespace depth_image_proc {
     }
   
 
-    void PointCloudXyziRadialNodelet::onInit()
+    void PointCloudXyzRgbRadialNodelet::onInit()
     {
+	NODELET_INFO("INIT XYZRGB RADIAL");
 	ros::NodeHandle& nh         = getNodeHandle();
 	ros::NodeHandle& private_nh = getPrivateNodeHandle();
 
-	intensity_nh_.reset( new ros::NodeHandle(nh, "intensity") );
-	ros::NodeHandle depth_nh(nh, "depth");
-	intensity_it_  .reset( new image_transport::ImageTransport(*intensity_nh_) );
+	rgb_nh_.reset( new ros::NodeHandle(nh, "rgb") );
+	ros::NodeHandle depth_nh(nh, "depth_registered");
+	rgb_it_  .reset( new image_transport::ImageTransport(*rgb_nh_) );
 	depth_it_.reset( new image_transport::ImageTransport(depth_nh) );
 
 	// Read parameters
 	private_nh.param("queue_size", queue_size_, 5);
+	bool use_exact_sync;
+	private_nh.param("exact_sync", use_exact_sync, false);
 
 	// Synchronize inputs. Topic subscriptions happen on demand in the connection callback.
-	sync_.reset( new Synchronizer(SyncPolicy(queue_size_), sub_depth_, sub_intensity_, sub_info_) );
-	sync_->registerCallback(boost::bind(&PointCloudXyziRadialNodelet::imageCb, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3));
-    
+	if(use_exact_sync) {
+  	  exact_sync_.reset( new ExactSynchronizer(ExactSyncPolicy(queue_size_), sub_depth_, sub_rgb_, sub_info_) );
+  	  exact_sync_->registerCallback(
+            boost::bind(&PointCloudXyzRgbRadialNodelet::imageCb, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3));
+	} else {
+  	  sync_.reset( new Synchronizer(SyncPolicy(queue_size_), sub_depth_, sub_rgb_, sub_info_) );
+  	  sync_->registerCallback(
+            boost::bind(&PointCloudXyzRgbRadialNodelet::imageCb, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3));
+	}
 	// Monitor whether anyone is subscribed to the output
 	ros::SubscriberStatusCallback connect_cb = 
-	    boost::bind(&PointCloudXyziRadialNodelet::connectCb, this);
+	    boost::bind(&PointCloudXyzRgbRadialNodelet::connectCb, this);
 	// Make sure we don't enter connectCb() between advertising and assigning to pub_point_cloud_
 	boost::lock_guard<boost::mutex> lock(connect_mutex_);
-	pub_point_cloud_ = nh.advertise<PointCloud>("points", 20, connect_cb, connect_cb);
+	pub_point_cloud_ = depth_nh.advertise<PointCloud>("points", 20, connect_cb, connect_cb);
     }
 
     // Handles (un)subscribing when clients (un)subscribe
-    void PointCloudXyziRadialNodelet::connectCb()
+    void PointCloudXyzRgbRadialNodelet::connectCb()
     {
 	boost::lock_guard<boost::mutex> lock(connect_mutex_);
 
 	if (pub_point_cloud_.getNumSubscribers() == 0)
 	{
 	    sub_depth_.unsubscribe();
-	    sub_intensity_.unsubscribe();
+	    sub_rgb_.unsubscribe();
 	    sub_info_.unsubscribe();
 	}
 	else if (!sub_depth_.getSubscriber())
@@ -185,17 +200,21 @@ namespace depth_image_proc {
 	
 	    // depth image can use different transport.(e.g. compressedDepth)
 	    image_transport::TransportHints depth_hints("raw",ros::TransportHints(), private_nh, depth_image_transport_param);
-	    sub_depth_.subscribe(*depth_it_, "image_raw",       5, depth_hints);
+	    sub_depth_.subscribe(*depth_it_, "image_rect",       1, depth_hints);
 	
 	    // intensity uses normal ros transport hints.
 	    image_transport::TransportHints hints("raw", ros::TransportHints(), private_nh);
-	    sub_intensity_.subscribe(*intensity_it_,   "image_raw", 5, hints);
-	    sub_info_.subscribe(*intensity_nh_,   "camera_info",      5);
+	    sub_rgb_.subscribe(*rgb_it_,   "image_rect_color", 1, hints);
+	    sub_info_.subscribe(*rgb_nh_,   "camera_info",      1);
+	
+	    NODELET_INFO("  subscribed to: %s", sub_rgb_.getTopic().c_str());
+	    NODELET_INFO("  subscribed to: %s", sub_depth_.getTopic().c_str());
+	    NODELET_INFO("  subscribed to: %s", sub_info_.getTopic().c_str());
 	}
     }
 
-    void PointCloudXyziRadialNodelet::imageCb(const sensor_msgs::ImageConstPtr& depth_msg,
-					      const sensor_msgs::ImageConstPtr& intensity_msg,
+    void PointCloudXyzRgbRadialNodelet::imageCb(const sensor_msgs::ImageConstPtr& depth_msg,
+					      const sensor_msgs::ImageConstPtr& rgb_msg_in,
 					      const sensor_msgs::CameraInfoConstPtr& info_msg)
     {
 	PointCloud::Ptr cloud_msg(new PointCloud);
@@ -206,11 +225,69 @@ namespace depth_image_proc {
 	cloud_msg->is_bigendian = false;
 
 	sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
-	pcd_modifier.setPointCloud2Fields(4,
-					  "x", 1, sensor_msgs::PointField::FLOAT32,
-					  "y", 1, sensor_msgs::PointField::FLOAT32,
-					  "z", 1, sensor_msgs::PointField::FLOAT32,
-					  "intensity", 1, sensor_msgs::PointField::FLOAT32);
+        pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+//	pcd_modifier.setPointCloud2Fields(6,
+//          "x", 1, sensor_msgs::PointField::FLOAT32,
+//          "y", 1, sensor_msgs::PointField::FLOAT32,
+//          "z", 1, sensor_msgs::PointField::FLOAT32,
+//          "r", 1, sensor_msgs::PointField::UINT8,
+//          "g", 1, sensor_msgs::PointField::UINT8,
+//          "b", 1, sensor_msgs::PointField::UINT8);
+	  // Check for bad inputs
+  if (depth_msg->header.frame_id != rgb_msg_in->header.frame_id)
+  {
+    NODELET_ERROR_THROTTLE(5, "Depth image frame id [%s] doesn't match RGB image frame id [%s]",
+                           depth_msg->header.frame_id.c_str(), rgb_msg_in->header.frame_id.c_str());
+    return;
+  }
+
+  // Update camera model
+  model_.fromCameraInfo(info_msg);
+
+  // Check if the input image has to be resized
+  sensor_msgs::ImageConstPtr rgb_msg = rgb_msg_in;
+  if (depth_msg->width != rgb_msg->width || depth_msg->height != rgb_msg->height)
+  {
+    sensor_msgs::CameraInfo info_msg_tmp = *info_msg;
+    info_msg_tmp.width = depth_msg->width;
+    info_msg_tmp.height = depth_msg->height;
+    float ratio = float(depth_msg->width)/float(rgb_msg->width);
+    info_msg_tmp.K[0] *= ratio;
+    info_msg_tmp.K[2] *= ratio;
+    info_msg_tmp.K[4] *= ratio;
+    info_msg_tmp.K[5] *= ratio;
+    info_msg_tmp.P[0] *= ratio;
+    info_msg_tmp.P[2] *= ratio;
+    info_msg_tmp.P[5] *= ratio;
+    info_msg_tmp.P[6] *= ratio;
+    model_.fromCameraInfo(info_msg_tmp);
+
+
+	    cv_bridge::CvImageConstPtr cv_ptr;
+    try
+    {
+      cv_ptr = cv_bridge::toCvShare(rgb_msg, rgb_msg->encoding);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("cv_bridge exception: %s", e.what());
+      return;
+    }
+    cv_bridge::CvImage cv_rsz;
+    cv_rsz.header = cv_ptr->header;
+    cv_rsz.encoding = cv_ptr->encoding;
+    cv::resize(cv_ptr->image.rowRange(0,depth_msg->height/ratio), cv_rsz.image, cv::Size(depth_msg->width, depth_msg->height));
+    if ((rgb_msg->encoding == enc::RGB8) || (rgb_msg->encoding == enc::BGR8) || (rgb_msg->encoding == enc::MONO8))
+      rgb_msg = cv_rsz.toImageMsg();
+    else
+      rgb_msg = cv_bridge::toCvCopy(cv_rsz.toImageMsg(), enc::RGB8)->toImageMsg();
+
+    //NODELET_ERROR_THROTTLE(5, "Depth resolution (%ux%u) does not match RGB resolution (%ux%u)",
+    //                       depth_msg->width, depth_msg->height, rgb_msg->width, rgb_msg->height);
+    //return;
+  } else {
+    rgb_msg = rgb_msg;
+  }
 
 
 	if(info_msg->D != D_ || info_msg->K != K_ || width_ != info_msg->width ||
@@ -237,22 +314,51 @@ namespace depth_image_proc {
 	    return;
 	}
 
-	if(intensity_msg->encoding == enc::TYPE_16UC1)
+        int red_offset, green_offset, blue_offset, color_step;
+	if(rgb_msg->encoding == enc::RGB8)
 	{
-	    convert_intensity<uint16_t>(intensity_msg, cloud_msg);
+		red_offset = 0;
+		green_offset = 1;
+		blue_offset = 2;
+		color_step = 3;
+	    convert_rgb(rgb_msg, cloud_msg, red_offset, green_offset, blue_offset, color_step);
 
 	}
-	else if(intensity_msg->encoding == enc::MONO8)
+	if(rgb_msg->encoding == enc::RGBA8)
 	{
-	    convert_intensity<uint8_t>(intensity_msg, cloud_msg);
+		red_offset = 0;
+		green_offset = 1;
+		blue_offset = 2;
+		color_step = 4;
+	    convert_rgb(rgb_msg, cloud_msg, red_offset, green_offset, blue_offset, color_step);
 	}
-	else if(intensity_msg->encoding == enc::TYPE_32FC1)
+	else if(rgb_msg->encoding == enc::BGR8)
 	{
-	    convert_intensity<float>(intensity_msg, cloud_msg);
+		red_offset = 2;
+		green_offset = 1;
+		blue_offset = 0;
+		color_step = 3;
+	    convert_rgb(rgb_msg, cloud_msg, red_offset, green_offset, blue_offset, color_step);
+	}
+	else if(rgb_msg->encoding == enc::BGRA8)
+	{
+		red_offset = 2;
+		green_offset = 1;
+		blue_offset = 0;
+		color_step = 4;
+	    convert_rgb(rgb_msg, cloud_msg, red_offset, green_offset, blue_offset, color_step);
+	}
+	else if(rgb_msg->encoding == enc::MONO8)
+	{
+		red_offset = 0;
+		green_offset = 0;
+		blue_offset = 0;
+		color_step = 1;
+	    convert_rgb(rgb_msg, cloud_msg, red_offset, green_offset, blue_offset, color_step);
 	}
 	else
 	{
-	    NODELET_ERROR_THROTTLE(5, "Intensity image has unsupported encoding [%s]", intensity_msg->encoding.c_str());
+	    NODELET_ERROR_THROTTLE(5, "RGB image has unsupported encoding [%s]", rgb_msg->encoding.c_str());
 	    return;
 	}
 
@@ -260,7 +366,7 @@ namespace depth_image_proc {
     }
 
     template<typename T>
-    void PointCloudXyziRadialNodelet::convert_depth(const sensor_msgs::ImageConstPtr& depth_msg,
+    void PointCloudXyzRgbRadialNodelet::convert_depth(const sensor_msgs::ImageConstPtr& depth_msg,
 						    PointCloud::Ptr& cloud_msg)
     {
 	// Combine unit conversion (if necessary) with scaling by focal length for computing (X,Y)
@@ -294,19 +400,24 @@ namespace depth_image_proc {
 	}
     }
 
-    template<typename T>
-    void PointCloudXyziRadialNodelet::convert_intensity(const sensor_msgs::ImageConstPtr& intensity_msg,
-							PointCloud::Ptr& cloud_msg)
+    void PointCloudXyzRgbRadialNodelet::convert_rgb(const sensor_msgs::ImageConstPtr& rgb_msg,
+							PointCloud::Ptr& cloud_msg,
+							int red_offset, int green_offset, int blue_offset, int color_step)
     {
-	sensor_msgs::PointCloud2Iterator<float> iter_i(*cloud_msg, "intensity");
-	const T* inten_row = reinterpret_cast<const T*>(&intensity_msg->data[0]);
+	sensor_msgs::PointCloud2Iterator<uint8_t> iter_r(*cloud_msg, "r");
+	sensor_msgs::PointCloud2Iterator<uint8_t> iter_g(*cloud_msg, "g");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_b(*cloud_msg, "b");
 
-	const int i_row_step = intensity_msg->step/sizeof(T);
-	for (int v = 0; v < (int)cloud_msg->height; ++v, inten_row += i_row_step)
+	const uint8_t* rgb = &rgb_msg->data[0];
+	int rgb_skip = rgb_msg->step - rgb_msg->width * color_step;
+	
+	for (int v = 0; v < (int)cloud_msg->height; ++v, rgb += rgb_skip)
 	{
-	    for (int u = 0; u < (int)cloud_msg->width; ++u, ++iter_i)
+	    for (int u = 0; u < (int)cloud_msg->width; ++u, rgb += color_step, ++iter_r, ++iter_g, ++iter_b)
 	    {
-		*iter_i = inten_row[u];
+		*iter_r = rgb[red_offset];
+		*iter_g = rgb[green_offset];
+		*iter_b = rgb[blue_offset];
 	    }
 	}
     }
@@ -315,4 +426,4 @@ namespace depth_image_proc {
 
 // Register as nodelet
 #include <pluginlib/class_list_macros.hpp>
-PLUGINLIB_EXPORT_CLASS(depth_image_proc::PointCloudXyziRadialNodelet,nodelet::Nodelet);
+PLUGINLIB_EXPORT_CLASS(depth_image_proc::PointCloudXyzRgbRadialNodelet,nodelet::Nodelet);

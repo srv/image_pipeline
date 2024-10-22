@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 #
 # Software License Agreement (BSD License)
 #
@@ -149,7 +149,7 @@ class CameraCheckerNode:
         if ok:
             return corners, ids
         else:
-            return None
+            return None, None
 
     def handle_monocular(self, msg):
 

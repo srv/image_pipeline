@@ -49,17 +49,6 @@
 #include <boost/thread.hpp>
 #include <boost/format.hpp>
 
-#ifdef HAVE_GTK
-#include <gtk/gtk.h>
-
-// Platform-specific workaround for #3026: image_view doesn't close when
-// closing image window. On platforms using GTK+ we connect this to the
-// window's "destroy" event so that image_view exits.
-static void destroy(GtkWidget *widget, gpointer data)
-{
-  ros::shutdown();
-}
-#endif
 
 namespace enc = sensor_msgs::image_encodings;
 
@@ -380,14 +369,6 @@ public:
     cv::setMouseCallback("right",     &StereoView::mouseCb, this);
     cv::setMouseCallback("disparity", &StereoView::mouseCb, this);
 #if CV_MAJOR_VERSION == 2
-#ifdef HAVE_GTK
-    g_signal_connect(GTK_WIDGET( cvGetWindowHandle("left") ),
-                     "destroy", G_CALLBACK(destroy), NULL);
-    g_signal_connect(GTK_WIDGET( cvGetWindowHandle("right") ),
-                     "destroy", G_CALLBACK(destroy), NULL);
-    g_signal_connect(GTK_WIDGET( cvGetWindowHandle("disparity") ),
-                     "destroy", G_CALLBACK(destroy), NULL);
-#endif
     cvStartWindowThread();
 #endif
 
@@ -421,13 +402,13 @@ public:
     {
       approximate_sync_.reset( new ApproximateSync(ApproximatePolicy(queue_size_),
                                                    left_sub_, right_sub_, disparity_sub_) );
-      approximate_sync_->registerCallback(boost::bind(&StereoView::imageCb, this, _1, _2, _3));
+      approximate_sync_->registerCallback(boost::bind(&StereoView::imageCb, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3));
     }
     else
     {
       exact_sync_.reset( new ExactSync(ExactPolicy(queue_size_),
                                        left_sub_, right_sub_, disparity_sub_) );
-      exact_sync_->registerCallback(boost::bind(&StereoView::imageCb, this, _1, _2, _3));
+      exact_sync_->registerCallback(boost::bind(&StereoView::imageCb, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3));
     }
   }
 

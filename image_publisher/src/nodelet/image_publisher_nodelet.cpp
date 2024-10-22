@@ -187,10 +187,10 @@ public:
 
     srv.reset(new ReconfigureServer(getPrivateNodeHandle()));
     ReconfigureServer::CallbackType f =
-      boost::bind(&ImagePublisherNodelet::reconfigureCallback, this, _1, _2);
+      boost::bind(&ImagePublisherNodelet::reconfigureCallback, this, boost::placeholders::_1, boost::placeholders::_2);
     srv->setCallback(f);
   }
 };
 }
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(image_publisher::ImagePublisherNodelet, nodelet::Nodelet);

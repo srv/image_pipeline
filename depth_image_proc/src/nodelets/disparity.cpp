@@ -94,7 +94,7 @@ void DisparityNodelet::onInit()
 
   // Synchronize inputs. Topic subscriptions happen on demand in the connection callback.
   sync_.reset( new Sync(sub_depth_image_, sub_info_, queue_size) );
-  sync_->registerCallback(boost::bind(&DisparityNodelet::depthCb, this, _1, _2));
+  sync_->registerCallback(boost::bind(&DisparityNodelet::depthCb, this, boost::placeholders::_1, boost::placeholders::_2));
 
   // Monitor whether anyone is subscribed to the output
   ros::SubscriberStatusCallback connect_cb = boost::bind(&DisparityNodelet::connectCb, this);
@@ -185,5 +185,5 @@ void DisparityNodelet::convert(const sensor_msgs::ImageConstPtr& depth_msg,
 } // namespace depth_image_proc
 
 // Register as nodelet
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(depth_image_proc::DisparityNodelet,nodelet::Nodelet);

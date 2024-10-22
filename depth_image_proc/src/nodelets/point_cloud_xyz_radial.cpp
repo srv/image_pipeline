@@ -36,6 +36,7 @@
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
 #include <image_geometry/pinhole_camera_model.h>
+#include <opencv2/calib3d/calib3d.hpp>
 #include <boost/thread.hpp>
 #include <depth_image_proc/depth_traits.h>
 
@@ -231,5 +232,5 @@ namespace depth_image_proc {
 } // namespace depth_image_proc
 
 // Register as nodelet
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(depth_image_proc::PointCloudXyzRadialNodelet,nodelet::Nodelet);
